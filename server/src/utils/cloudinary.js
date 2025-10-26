@@ -13,6 +13,7 @@ const uploadOnCloudinary = async (localFilePath) => {
     //upload the file on cloudinary
     const response = await cloudinary.uploader.upload(localFilePath, {
       resource_type: "auto",
+      folder: "mytube/thumbnails",
     });
     // file has been uploaded successfull
     //console.log("file is uploaded on cloudinary ", response.url);
@@ -24,14 +25,21 @@ const uploadOnCloudinary = async (localFilePath) => {
   }
 };
 
-const deleteImageFromCloudinary = async (publicId) => {
+const deleteFromCloudinary = async (publicId, resourceType = "image") => {
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
+    if (!publicId) {
+      throw new Error("Public ID is required to delete a Cloudinary resource");
+    }
+
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+    });
+
     return result;
   } catch (error) {
-    console.error("Error deleting image from Cloudinary:", error);
+    console.error(`Error deleting ${resourceType} from Cloudinary:`, error);
     throw error;
   }
 };
 
-export { uploadOnCloudinary, deleteImageFromCloudinary };
+export { uploadOnCloudinary, deleteFromCloudinary };

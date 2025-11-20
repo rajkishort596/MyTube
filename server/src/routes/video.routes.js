@@ -11,16 +11,23 @@ import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
 
 const router = Router();
-router.use(verifyJWT); // Apply verifyJWT middleware to all routes in this file
 
-router.route("/").get(getAllVideos).post(publishAVideo);
+/* ----------------
+   @ PUBLIC ROUTES
+  ---------------- */
 
-router
-  .route("/:videoId")
-  .get(getVideoById)
-  .delete(deleteVideo)
-  .patch(upload.single("thumbnail"), updateVideo);
+router.get("/", getAllVideos);
+router.get("/:videoId", getVideoById);
 
-router.route("/toggle/publish/:videoId").patch(togglePublishStatus);
+/* ---------------- 
+   @ PROTECTED ROUTES 
+  ---------------- */
+
+router.post("/", verifyJWT, publishAVideo);
+router.delete("/:videoId", verifyJWT, deleteVideo);
+router.patch("/:videoId", verifyJWT, upload.single("thumbnail"), updateVideo);
+
+// Toggle publish / unpublish
+router.patch("/toggle/publish/:videoId", verifyJWT, togglePublishStatus);
 
 export default router;

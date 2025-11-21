@@ -12,9 +12,32 @@ const getVideoComments = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid Video Id");
   }
 
-  const matchQuery = {};
+  const matchQuery = {
+    video: new mongoose.Types.ObjectId(videoId),
+  };
 
-  matchQuery.video = mongoose.Types.ObjectId.createFromHexString(videoId);
+  const pipeline = [
+    { $match: matchQuery },
+
+    {
+      $lookup: {
+        from: "users",
+        localField: "owner",
+        foreignField: "_id",
+        as: "owner",
+      },
+    },
+    { $unwind: "$owner" },
+
+    {
+      $project: {
+        content: 1,
+        createdAt: 1,
+        "owner.username": 1,
+        "owner.avatar.url": 1,
+      },
+    },
+  ];
 
   const options = {
     limit: parseInt(limit),
@@ -23,11 +46,10 @@ const getVideoComments = asyncHandler(async (req, res) => {
       totalDocs: "totalComments",
       docs: "comments",
     },
-    populate: { path: "owner", select: "username avatar" },
   };
 
   const comments = await Comment.aggregatePaginate(
-    Comment.aggregate([{ $match: matchQuery }]),
+    Comment.aggregate(pipeline),
     options
   );
 
@@ -80,8 +102,8 @@ const updateComment = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Comment Content is required");
   }
 
-  const comment = await Comment.findByIdAndUpdate(
-    commentId,
+  const comment = await Comment.findOneAndUpdate(
+    { _id: commentId, owner },
     {
       $set: {
         content: content?.trim(),
@@ -89,6 +111,10 @@ const updateComment = asyncHandler(async (req, res) => {
     },
     { new: true }
   );
+
+  if (!comment) {
+    throw new ApiError(404, "Comment not found");
+  }
   return res
     .status(200)
     .json(new ApiResponse(200, comment, "Comment Updated Successfully"));

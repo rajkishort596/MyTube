@@ -44,19 +44,55 @@ const createTweet = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, tweet, "Tweet Created Successfully"));
 });
 
-const getUserTweets = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
-  if (!isValidObjectId(userId)) {
-    throw new ApiError(400, "Invalid User Id");
+const getChannelTweets = asyncHandler(async (req, res) => {
+  const { channelId } = req.params;
+  const userId = req.user?._id;
+
+  if (!isValidObjectId(channelId)) {
+    throw new ApiError(400, "Invalid Channel Id");
+  }
+  let matchQuery = {};
+  if (channelId) {
+    matchQuery.owner = new mongoose.Types.ObjectId(channelId);
   }
 
-  const userTweets = await Tweet.find({ owner: userId })
-    .populate("owner", "username fullName avatar.url")
-    .sort({ createdAt: -1 });
+  const tweets = await Tweet.aggregate([
+    { $match: matchQuery },
+
+    // Join with Likes collection
+    {
+      $lookup: {
+        from: "likes",
+        localField: "_id",
+        foreignField: "tweet",
+        as: "likes",
+      },
+    },
+
+    // Add stats
+    {
+      $addFields: {
+        likesCount: { $size: "$likes" },
+        isLikedByUser: userId
+          ? {
+              $in: [new mongoose.Types.ObjectId(userId), "$likes.likedBy"],
+            }
+          : false,
+      },
+    },
+
+    {
+      $project: {
+        likes: 0,
+      },
+    },
+
+    { $sort: { createdAt: -1 } },
+  ]);
 
   return res
     .status(200)
-    .json(new ApiResponse(200, userTweets, "User Tweets fetched successfully"));
+    .json(new ApiResponse(200, tweets, "Channel Tweets fetched successfully"));
 });
 
 const updateTweet = asyncHandler(async (req, res) => {
@@ -132,4 +168,4 @@ const deleteTweet = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "Tweet deleted successfully"));
 });
 
-export { createTweet, getUserTweets, updateTweet, deleteTweet };
+export { createTweet, getChannelTweets, updateTweet, deleteTweet };

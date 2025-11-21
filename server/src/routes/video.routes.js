@@ -3,6 +3,7 @@ import {
   deleteVideo,
   getAllVideos,
   getVideoById,
+  getVideoStats,
   publishAVideo,
   togglePublishStatus,
   updateVideo,
@@ -18,6 +19,7 @@ const router = Router();
 
 router.get("/", getAllVideos);
 router.get("/:videoId", getVideoById);
+router.get("/:videoId/stats", getVideoStats);
 
 /* ---------------- 
    @ PROTECTED ROUTES 

@@ -1,6 +1,7 @@
 import mongoose, { isValidObjectId } from "mongoose";
 import { Video } from "../models/video.model.js";
-import { User } from "../models/user.model.js";
+import { Like } from "../models/like.model.js";
+import { Comment } from "../models/comment.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -117,9 +118,13 @@ const getVideoById = asyncHandler(async (req, res) => {
   if (!mongoose.isValidObjectId(videoId)) {
     throw new ApiError(400, "Invalid Video Id");
   }
-  const video = await Video.findById(videoId).populate({
+  const video = await Video.findByIdAndUpdate(
+    videoId,
+    { $inc: { views: 1 } },
+    { new: true }
+  ).populate({
     path: "owner",
-    select: "usrername fullName avatar",
+    select: "username fullName avatar",
   });
 
   if (!video) {
@@ -156,7 +161,10 @@ const updateVideo = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Video not found or User is not the owner");
   }
 
-  const updateData = { title, description };
+  const updateData = {};
+
+  if (title?.trim()) updateData.title = title;
+  if (description?.trim()) updateData.description = description;
 
   if (req.file) {
     const thumbnailLocalPath = req.file.path;
@@ -248,25 +256,52 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
 
   const video = await Video.findById(videoId);
 
-  video.isPublished = !video.isPublished;
-  await video.save();
-
   if (!video) {
     throw new ApiError(404, "Video not found");
   }
 
   if (video.owner.toString() !== owner.toString()) {
-    throw new ApiError(
-      403,
-      "You are not authorized to toggle publish status of this video"
-    );
+    throw new ApiError(403, "You are not authorized to toggle publish status");
   }
+
+  video.isPublished = !video.isPublished;
+  await video.save();
 
   return res
     .status(200)
     .json(
       new ApiResponse(200, video, "Video publish status toggled successfully")
     );
+});
+
+const getVideoStats = asyncHandler(async (req, res) => {
+  const { videoId } = req.params;
+
+  if (!mongoose.isValidObjectId(videoId)) {
+    throw new ApiError(400, "Invalid Video Id");
+  }
+
+  const [likesCount, commentsCount, video] = await Promise.all([
+    Like.countDocuments({ video: videoId }),
+    Comment.countDocuments({ video: videoId }),
+    Video.findById(videoId).select("views"),
+  ]);
+
+  if (!video) {
+    throw new ApiError(404, "Video not found");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        views: video.views || 0,
+        likes: likesCount,
+        comments: commentsCount,
+      },
+      "Video stats fetched successfully"
+    )
+  );
 });
 
 export {
@@ -276,4 +311,5 @@ export {
   updateVideo,
   deleteVideo,
   togglePublishStatus,
+  getVideoStats,
 };

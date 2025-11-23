@@ -8,7 +8,7 @@ import {
   togglePublishStatus,
   updateVideo,
 } from "../controllers/video.controller.js";
-import { verifyJWT } from "../middlewares/auth.middleware.js";
+import { lazyVerifyJWT, verifyJWT } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
 
 const router = Router();
@@ -18,7 +18,7 @@ const router = Router();
   ---------------- */
 
 router.get("/", getAllVideos);
-router.get("/:videoId", getVideoById);
+router.get("/:videoId", lazyVerifyJWT, getVideoById);
 router.get("/:videoId/stats", getVideoStats);
 
 /* ---------------- 

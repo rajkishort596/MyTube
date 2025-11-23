@@ -9,6 +9,7 @@ import {
   deleteFromCloudinary,
   uploadOnCloudinary,
 } from "../utils/cloudinary.js";
+import { User } from "../models/user.model.js";
 
 const getAllVideos = asyncHandler(async (req, res) => {
   const {
@@ -114,10 +115,13 @@ const publishAVideo = asyncHandler(async (req, res) => {
 
 const getVideoById = asyncHandler(async (req, res) => {
   const { videoId } = req.params;
+  const userId = req?.user?._id;
 
   if (!mongoose.isValidObjectId(videoId)) {
     throw new ApiError(400, "Invalid Video Id");
   }
+
+  // Increase views + get full video
   const video = await Video.findByIdAndUpdate(
     videoId,
     { $inc: { views: 1 } },
@@ -129,6 +133,15 @@ const getVideoById = asyncHandler(async (req, res) => {
 
   if (!video) {
     throw new ApiError(404, "Video not found");
+  }
+
+  if (userId) {
+    await User.findByIdAndUpdate(userId, {
+      $pull: { watchHistory: video._id },
+    });
+    await User.findByIdAndUpdate(userId, {
+      $push: { watchHistory: { $each: [video._id], $position: 0 } },
+    });
   }
 
   return res

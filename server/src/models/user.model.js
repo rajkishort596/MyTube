@@ -55,6 +55,16 @@ const userSchema = new Schema(
     refreshToken: {
       type: String,
     },
+    otp: {
+      type: String,
+    },
+    otpExpiry: {
+      type: Date,
+    },
+    verified: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -96,6 +106,17 @@ userSchema.methods.generateRefreshToken = function () {
       expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
     }
   );
+};
+
+userSchema.methods.generatePasswordResetToken = function () {
+  const payload = {
+    _id: this._id,
+    email: this.email,
+  };
+  // Expires in 1 hour
+  return jwt.sign(payload, process.env.RESET_PASSWORD_SECRET, {
+    expiresIn: "1h",
+  });
 };
 
 export const User = mongoose.model("User", userSchema);

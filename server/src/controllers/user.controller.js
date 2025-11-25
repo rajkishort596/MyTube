@@ -9,6 +9,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { generateAccessAndRefereshTokens } from "../utils/generateToken.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 const registerUser = asyncHandler(async (req, res) => {
   const { fullName, email, username, password } = req.body;
@@ -19,11 +20,15 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All fields are required");
   }
 
-  const existedUser = await User.findOne({
+  const user = await User.findOne({
     $or: [{ username }, { email }],
   });
 
-  if (existedUser) {
+  if (!user) {
+    throw new ApiError(400, "Please verify your email first");
+  }
+
+  if (user.verified) {
     throw new ApiError(409, "User with email or username already exists");
   }
   //console.log(req.files);
@@ -60,14 +65,16 @@ const registerUser = asyncHandler(async (req, res) => {
     publicId: uploadedCoverImage?.public_id || "",
   };
 
-  const user = await User.create({
-    fullName,
-    avatar,
-    coverImage,
-    email,
-    password,
-    username: username.toLowerCase(),
-  });
+  user.fullName = fullName;
+  user.avatar = avatar;
+  user.coverImage = coverImage;
+  user.password = password;
+  user.username = username.toLowerCase();
+  user.verified = true;
+  user.otp = undefined;
+  user.otpExpiry = undefined;
+
+  await user.save();
 
   const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
@@ -223,6 +230,10 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
 const changeCurrentPassword = asyncHandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
 
+  if (!oldPassword || !newPassword) {
+    throw new ApiError(400, "Old Password and New Password are required");
+  }
+
   const user = await User.findById(req.user?._id);
   const isPasswordCorrect = await user.isPasswordCorrect(oldPassword);
 
@@ -238,6 +249,73 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, {}, "Password changed successfully"));
 });
 
+const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) throw new ApiError(400, "Email is required");
+
+  const user = await User.findOne({ email });
+  if (!user) throw new ApiError(404, "User with this email does not exist");
+
+  // Generate JWT reset token
+  const resetToken = user.generatePasswordResetToken();
+  const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173"; // fallback for dev
+
+  const resetUrl = `${FRONTEND_URL}/reset-password/${resetToken}`;
+
+  await sendEmail(
+    user.email,
+    "Password Reset",
+    `
+      <div style="font-family: Arial, sans-serif; color: #222;">
+        <h2>Password Reset Request</h2>
+        <p>Hello ${user.fullName || ""},</p>
+        <p>We received a request to reset your password. Click the button below to reset it:</p>
+        <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#1976d2;color:#fff;text-decoration:none;border-radius:4px;font-weight:bold;">Reset Password</a>
+        <p>If you did not request this, please ignore this email.</p>
+        <p style="margin-top:32px;font-size:12px;color:#888;">If the button doesn't work, copy and paste this link into your browser:<br>${resetUrl}</p>
+      </div>
+    `
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { resetUrl },
+        "Password reset link sent to your email"
+      )
+    );
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    throw new ApiError(400, "Token and new password are required");
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, process.env.RESET_PASSWORD_SECRET);
+  } catch (err) {
+    throw new ApiError(400, "Invalid or expired reset token");
+  }
+
+  const user = await User.findById(payload._id);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  user.password = password;
+  await user.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "Password reset successful"));
+});
+
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
     .status(200)
@@ -245,10 +323,10 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 const updateAccountDetails = asyncHandler(async (req, res) => {
-  const { fullName, email } = req.body;
+  const { fullName } = req.body;
 
-  if (!fullName && !email) {
-    throw new ApiError(400, "All fields are required");
+  if (!fullName.trim()) {
+    throw new ApiError(400, "Full Name is required");
   }
 
   const user = await User.findByIdAndUpdate(
@@ -256,7 +334,6 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
     {
       $set: {
         fullName,
-        email: email,
       },
     },
     { new: true }
@@ -485,6 +562,8 @@ export {
   logoutUser,
   refreshAccessToken,
   changeCurrentPassword,
+  forgotPassword,
+  resetPassword,
   getCurrentUser,
   updateAccountDetails,
   updateUserAvatar,
